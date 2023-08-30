@@ -1,0 +1,28 @@
+<launch>
+    <arg name="path0"   default="/src/poseestimation/scripts/TriHornNet/ckpt" />
+    <arg name="endcnt"  default = "1000" />
+    <arg name="tx_rate" default = "10" />
+
+    
+    <node pkg="mainloop" type="mainloop.py" name="main_function" output="screen" >
+        <param name="endcnt" type = "int"   value = "$(arg endcnt)"/>
+        <param name="tx_rate"   type = "int"    value = "$(arg tx_rate)"/>
+    </node>
+
+    <node pkg="handdetection" type="handdetection.py" name="detection_hand_area_from_a_full_image" output="screen" >
+        <param name="source"    type = "int"    value ="1" />
+        <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
+        <param name="tx_rate"   type = "int"    value = "$(arg tx_rate)"/>
+    </node>
+
+    <!-- path means the net parameter dir. source indicates the input, dataset(0) or realtime image(1) -->
+    <node pkg="poseestimation" type="poseestimation.py" name="poseestimation" output="screen" >
+        <param name="path"      type = "string"    value="/src/poseestimation/scripts/TriHornNet/ckpt"/>
+        <param name="source"    type = "int"    value="1"/>
+        <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
+        <param name="tx_rate"   type = "int"    value = "$(arg tx_rate)"/>
+    </node>
+
+    
+    <!--     roslaunch kinect2_bridge kinect2_bridge.launch                                 -->  
+</launch>
