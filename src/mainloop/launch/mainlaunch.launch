@@ -21,6 +21,9 @@
         <param name="source"    type = "int"    value="1"/>
         <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
         <param name="tx_rate"   type = "int"    value = "$(arg tx_rate)"/>
+        <param name="theta_z"   type = "int"    value = "0"/>
+        <param name="theta_x"   type = "int"    value = "30"/>
+        <param name="theta_y"   type = "int"    value = "0"/>
     </node>
 
     

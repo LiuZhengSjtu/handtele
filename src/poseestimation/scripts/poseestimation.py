@@ -22,6 +22,7 @@ if __name__ == "__main__":
     while not rospy.is_shutdown():
         
         poseesti.run()
+        topic.publish_state()
         topic.publish_angle()
 
         if topic.cnt_tx_angle >  poseesti.endcnt:

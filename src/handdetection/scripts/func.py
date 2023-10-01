@@ -159,10 +159,16 @@ class theTopic():
     def sub_poseesti_fbk_callback(self,msg):
         
         self.cnt_rx_poseesti_fbk += 1
-        self.rx_poseesti = msg.data
+        # self.rx_poseesti = msg.data
+        self.rx_poseesti = msg
+        
 
         #   reflect whether the hand estimation is done, if done, no hand detection is needed.
         if self.rx_poseesti.data > 0 :
+            self.distance = self.rx_poseesti.data & 0xffff
+            self.pix_x = (self.rx_poseesti.data & 0xff000000)>>24
+            self.pix_y = (self.rx_poseesti.data & 0xff0000) >> 16
+
             self.sub_poseesti_fbk_doneflag = True
         else:
             self.sub_poseesti_fbk_doneflag = False
@@ -188,51 +194,67 @@ class handDetection():
         self.fw = 512 / 70 * 57.3
         self.fh = 424 / 60 * 57.3
 
+        self.com = np.array((0,0,0), np.uint16)
+
+        self.main_cmd_f = 2
+
     def run(self,main_cmd = 0):
+        if self.main_cmd_f == 2 and main_cmd == 0:
+            self.start_cmd = time.time()
+        self.main_cmd_f = main_cmd
+        if True:
+            if topic.sub_poseesti_fbk_doneflag == False or (time.time() - self.start_cmd < 2) :
+                global len_pred, conf_sort
 
-        if topic.sub_poseesti_fbk_doneflag == False and main_cmd == 0:
-            global len_pred, conf_sort
+                self.cnt += 1
+                
 
-            self.cnt += 1
-            
+                #   predict the dataset
+                if self.source == 0:
+                    self.pred.run_dataset()
+                elif self.source == 1:
+                    #   predict real-time depth images
+                    if topic.sub_kinect_newflag and True:
 
-            #   predict the dataset
-            if self.source == 0:
-                self.pred.run_dataset()
-            elif self.source == 1:
-                #   predict real-time depth images
-                if topic.sub_kinect_newflag and True:
-
-                    res0 = self.pred.run_realtime(image=topic.imgarrcrop)
-                    #  [ top, left, bottom, right ][ confidence ]
+                        res0 = self.pred.run_realtime(image=topic.imgarrcrop)
+                        #  [ top, left, bottom, right ][ confidence ]
 
 
 
-                    #   if no hand found
-                    if  res0 == None :
-                        self.len_pred = 0
-                        detectres = None
-                        
-                    else:
-                        #   the position array of the found hands.  confidence array.
-                        resarr = np.array(res0[0],dtype=np.float32)
-                        condfres = np.array(res0[1],dtype=np.float32)
-
-                        detectres0 = np.clip( resarr[:, :4], 0.0 , topic.sub_kinect_crop - 1)
-                        detectres = detectres0.astype(int)
-
-                        #   the number of found hands
-                        if len(resarr.shape) == 1:
-                            self.len_pred = 1
-                            conf_sort = 0
+                        #   if no hand found
+                        if  res0 == None :
+                            self.len_pred = 0
+                            detectres = None
+                            
                         else:
-                            self.len_pred = resarr.shape[0]
-                            self.detectrefine(detectres,condfres)
-                        
-                            conf_sort = self.conf_sort
-                    len_pred = self.len_pred
+                            #   the position array of the found hands.  confidence array.
+                            resarr = np.array(res0[0],dtype=np.float32)
+                            condfres = np.array(res0[1],dtype=np.float32)
 
-                    topic.sub_kinect_newflag = False
+                            detectres0 = np.clip( resarr[:, :4], 0.0 , topic.sub_kinect_crop - 1)
+                            detectres = detectres0.astype(int)
+
+                            #   the number of found hands
+                            if len(resarr.shape) == 1:
+                                self.len_pred = 1
+                                conf_sort = 0
+                            else:
+                                self.len_pred = resarr.shape[0]
+                                self.detectrefine(detectres,condfres)
+                            
+                                conf_sort = self.conf_sort
+                        len_pred = self.len_pred
+
+                        topic.sub_kinect_newflag = False
+            else:
+                delt_x = int((topic.pix_x - 64) / 64 * self.cube_pix_num_w_half)
+                delt_y = int((topic.pix_y - 64) / 64 * self.cube_pix_num_h_half)
+                # delt_z = topic.distance
+                self.com[0] = self.com[0] + delt_y
+                self.com[1] = self.com[1] + delt_x
+                self.com[2] = topic.distance
+
+            self.cube_img(cube_size=200)
 
 
     def detectrefine(self,pos,conf):
@@ -269,7 +291,7 @@ class handDetection():
         cubesize = 200
         self.com = self.getcom(pos,cubesize=cubesize)
 
-        self.cube_img(cube_size=cubesize)
+        # self.cube_img(cube_size=cubesize)
 
 
     def getcom(self,pos,cubesize=200):
@@ -330,9 +352,16 @@ class handDetection():
         if self.com[2] > 0 :
 
             bkg = int(self.com[2] + cube_size / 2 )
-            len_w = int(cube_size / self.com[2] * self.fw /2)  #   pixel nums ***
+            
+            len_w = int(cube_size / self.com[2] * self.fw /2)  #   pixel nums *** of half cube size
             len_h = int(cube_size / self.com[2] * self.fh /2)
             len_d = cube_size / 2
+
+            self.cube_pix_num_w_half = len_w
+            self.cube_pix_num_h_half = len_h
+            self.cube_d_half = len_d
+
+
             # print('-'*30, 'com: h,w ',self.com,'len w: ',len_w, ' len h', len_h, 'shape of imgarrcrop: ',topic.imgarrcrop.shape)
             cube_ori = topic.imgarrcrop[max(0,self.com[0]-len_h):min(self.img_w *2 ,self.com[0]+len_h), max(0,self.com[1]-len_w):min(self.img_w * 2,self.com[1] + len_w) ]
             # print('create cube_ori with size:  ',cube_ori.shape)
@@ -372,7 +401,7 @@ class handDetection():
             Info_detect2estimate.data = cube_nonnorm.flatten().tolist()
             tmp = np.array([self.com[0], self.com[1], self.com[2], len_h, len_w, int(len_d) ],dtype=UInt16)
             Info_detect2estimate.annotation = list(tmp)
-
+            #   annotation: 0: row num, 1: column num, 2: distance mm, 3: height of pixel of half cube size, 4: width of pixel to half cube size, 5: half cube size
             # print(Info_detect2estimate.annotation)
             # print(self.cube_norm.shape,'\n',self.cube_norm)
 

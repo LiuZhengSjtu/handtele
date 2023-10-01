@@ -59,13 +59,15 @@ class theTopic():
         self.rx.annotation = [0,0,250,128,128,100]
 
         if self.pub:
+            #   to hand detection pkg
             self.pub_state = rospy.Publisher(self.pkgname +"_state", UInt32,queue_size=2)
             self.tx_state = UInt32(0)
             self.rate_tx_state = rospy.Rate(rate_tx)
             self.cnt_tx_state = 0   
 
-            self.pub_angle = rospy.Publisher(self.pkgname +"_angle", UInt32,queue_size=2)
-            self.tx_angle = UInt32()
+            #   to bio_ik
+            self.pub_angle = rospy.Publisher(self.pkgname +"_cmd", hand,queue_size=2)
+            self.tx_angle = hand()
             self.rate_tx_angle = rospy.Rate(rate_tx)
             self.cnt_tx_angle = 0    
 
@@ -80,15 +82,17 @@ class theTopic():
 
 
     def publish_state(self):
+        #   feedback the state of the estimation to the hand detection pkg, including the wrist point location (com)
         global sharedata
         self.tx_state.data = sharedata.handcentercode
         self.pub_state.publish(self.tx_state)
-        if self.cnt_tx_angle % 10 == 0:
+        if self.cnt_tx_state % 10 == 0:
             rospy.loginfo("----4 %s topic tx angle: %d ----gesture_state: %d, trackenable: %d .",self.pkgname,self.tx_state.data ,sharedata.gesturests, sharedata.trackenable)
             rospy.loginfo("the center code: %d ",sharedata.handcentercode)
         self.cnt_tx_state += 1
 
     def publish_angle(self):
+        #    contain the key points location in wrist frame, to the bio_ik pkg. unit: 0.01 mm
         if self.pub:
             self.tx_angle.data = (self.cnt_tx_angle & 0xffff) + (( 0 & 0xffff)<<16)
             # self.pub.publish(self.tx)
@@ -158,7 +162,7 @@ class poseEstimation():
         self.halfimg = 64
         self.fw = 512 / 70 * 57.3
         self.fh = 424 / 60 * 57.3
-        self.preds_3d = np.zeros((21,3))
+        self.preds_3d = np.zeros((21,3))        #   in camera frame, x y z order
 
         self.gesturests = 0             #   0: initial, 1: up+disperse, first, 2: up+pinch 3: up+disperse, second 4: up+pinch
         self.gesturejudge = [0,0,0,0]     #   [pinch, disperse, palm up, Timer]
@@ -175,6 +179,9 @@ class poseEstimation():
 
         self.filehandle.write('matrix: ' + '\n')
         self.filehandle.write(str(topic.Rot.as_dcm())+'\n')
+
+        #   the order re-map from the predictions to the physical model frame, wrist frame.
+        # self.index_remap = np.array([])
         
     def run(self):
         if self.init == False:
@@ -321,6 +328,7 @@ class poseEstimation():
         self.preds_3d[:,0] = (topic.rx.annotation[1] - 256 + ( (preds[:,0] - self.halfimg) / self.halfimg * topic.rx.annotation[4] )) / self.fw * self.preds_3d[:,2]      #topic.rx.annotation[2]
         self.preds_3d[:,1] = (topic.rx.annotation[0] - 208 + ( (preds[:,1] - self.halfimg) / self.halfimg * topic.rx.annotation[3] )) / self.fh * self.preds_3d[:,2]      #topic.rx.annotation[2]
 
+        #   from camera frame to camera-based horizon frame
         self.preds_ground = topic.Rot.apply(self.preds_3d)
 
         #   center of four fingers (x,y,z) pix, pix, mm. x and y are in 128*128 image, so x and y are [0~128]
@@ -403,7 +411,62 @@ class poseEstimation():
 
 
     def physics(self):
-        preds_3d = self.preds_ground
+        #   turn the preds to wrist frame.
+        #   x axis: in palm plane, vertical to y axis.
+        #   y axis: in palm plane, in middle of the index and ring fingers.
+        #   z axis: vertical to palm
+        preds_3d = self.preds_ground - self.preds_ground[0,:]
+
+        #   determine the y axis, the vector from wrist to MCPs of 4 fingers
+        v_if = self.preds_3d[1,:]
+        v_if = v_if / np.linalg.norm(v_if)
+
+        v_mf = self.preds_3d[5,:] 
+        v_mf = v_mf / np.linalg.norm(v_mf)
+
+        v_rf = self.preds_3d[9,:] 
+        v_rf = v_rf / np.linalg.norm(v_rf)
+
+        v_lf = self.preds_3d[13,:] 
+        v_lf = v_lf / np.linalg.norm(v_lf)
+
+
+        v_y =  v_if + v_mf + v_rf + v_lf
+        v_y = v_y / np.linalg.norm(v_y)
+
+        #   determine the z axis, based on the cross product
+        v_z_if = np.cross(v_if, v_y) 
+        v_z_if = v_z_if / np.linalg.norm(v_z_if)
+
+        v_z_mf = np.cross(v_mf, v_y)
+        v_z_mf = v_z_mf / np.linalg.norm(v_z_mf)
+        if np.dot(v_z_if, v_z_mf) < 0:
+            v_z_mf = - v_z_mf
+
+        v_z_rf = np.cross(v_y, v_rf)
+        v_z_rf = v_z_rf / np.linalg.norm(v_z_rf)
+        if np.dot(v_z_if, v_z_rf) < 0:
+            v_z_rf = - v_z_rf
+
+        v_z_lf = np.cross(v_y, v_lf)
+        v_z_lf = v_z_lf / np.linalg.norm(v_z_lf)
+        if np.dot(v_z_if, v_z_lf) < 0:
+            v_z_lf = - v_z_lf
+
+        v_z = v_z_if + v_z_mf + v_z_rf + v_z_lf
+        v_z = v_z  / np.linalg.norm(v_z)
+
+        #   determine the x axis
+        v_x = np.cross(v_y, v_z)
+
+        #   above x y z are the axes of the wrist frame expressed  in ground frame 
+        #   so, from the ground frame to the wrist frame, the transform matrix is:
+        tf_grd2rst = np.array([v_x, v_y, v_z])
+
+        #   20 points in wrist frame. size: 20*3
+        self.preds_wrist = np.dot(tf_grd2rst,preds_3d[1:,:].T).T
+        self.preds_wrist_1 = np.reshape(self.preds_wrist,(60,1))
+
 
 
 
