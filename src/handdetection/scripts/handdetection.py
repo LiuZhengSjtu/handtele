@@ -23,7 +23,7 @@ if __name__=="__main__":
         topic.publish()
         handdete.run(topic.rx_main_cmd)
 
-        if topic.cnt_tx > handdete.endcnt:
+        if topic.cnt_tx > handdete.endcnt or topic.esc_cnt > 10:
             break
     
 

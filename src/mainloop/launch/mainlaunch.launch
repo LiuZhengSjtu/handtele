@@ -2,19 +2,27 @@
     <arg name="path0"   default="/src/poseestimation/scripts/TriHornNet/ckpt" />
     <arg name="endcnt"  default = "1000" />
     <arg name="tx_rate" default = "10" />
+    <arg name="saveflg" default = "true" />
 
-    
+    <!-- for kinect -->
+    <include file="/homeL/zheng/catkin_ws/src/iai_kinect2/kinect2_bridge/launch/kinect2_bridge.launch">
+    </include>
+
+    <!-- for mainloop -->
     <node pkg="mainloop" type="mainloop.py" name="main_function" output="screen" >
         <param name="endcnt" type = "int"   value = "$(arg endcnt)"/>
         <param name="tx_rate"   type = "int"    value = "$(arg tx_rate)"/>
     </node>
 
+    <!-- for hand detection -->
     <node pkg="handdetection" type="handdetection.py" name="detection_hand_area_from_a_full_image" output="screen" >
         <param name="source"    type = "int"    value ="1" />
         <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
         <param name="tx_rate"   type = "int"    value = "$(arg tx_rate)"/>
+        <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
     </node>
 
+    <!-- for hand pose estimation -->
     <!-- path means the net parameter dir. source indicates the input, dataset(0) or realtime image(1) -->
     <node pkg="poseestimation" type="poseestimation.py" name="poseestimation" output="screen" >
         <param name="path"      type = "string"    value="/src/poseestimation/scripts/TriHornNet/ckpt"/>
@@ -24,7 +32,26 @@
         <param name="theta_z"   type = "int"    value = "0"/>
         <param name="theta_x"   type = "int"    value = "30"/>
         <param name="theta_y"   type = "int"    value = "0"/>
+        <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
     </node>
+
+    <!-- for hand physical model, start urdf moveit -->
+    
+    <include file="/homeL/zheng/ros_python/tst/ws_moveit/src/physical_hand/launch/demo.launch">
+    </include>
+    
+
+
+    <!-- for bio_ik service -->
+    <node pkg="bio_ik_service" type="bio_ik_service" name="bio_ik_service" output="screen">
+    </node>
+
+    <!-- for bio_ik optimazation, adopt physical model to regularize the keypoints -->
+    <node pkg="bio_ik_service_examples" type="physical_hand_bio_ik.py" name="get_bio_ik_hand_angle" output="screen">
+    <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
+    <param name="saveflg"   type = "bool"   value = "(arg saveflg)"/>
+    </node>
+
 
     
     <!--     roslaunch kinect2_bridge kinect2_bridge.launch                                 -->  

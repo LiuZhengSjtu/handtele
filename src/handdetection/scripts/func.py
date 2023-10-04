@@ -12,6 +12,7 @@ from PIL import Image
 import struct
 import time
 from scipy import ndimage
+import os
 
 
 len_pred = 0      #   num of detected hands
@@ -25,6 +26,7 @@ Info_detect2estimate = hand()
 class theTopic(): 
     def __init__(self,pub= True,sub=True, name="handdetection",rate_tx=10,rate_rx=1) -> None:
         global Info_detect2estimate
+        ##   annotation: 0: row num, 1: column num, 2: distance mm, 3: height of pixel of half cube size, 4: width of pixel to half cube size, 5: half cube size
         Info_detect2estimate.annotation = list(np.array([1,2,3,4,5,6], dtype= UInt16))
         Info_detect2estimate.data = np.ones((128,128),dtype=UInt16).flatten().tolist()
 
@@ -35,6 +37,9 @@ class theTopic():
         rospy.loginfo("---- "+self.pkgname+" ---- 2. send results to mainloop ----")
         rospy.loginfo("---- "+self.pkgname+" ---- 3. import depth image ----")
         rospy.loginfo("---- "+self.pkgname+" ---- 4. detection ----")
+
+        self.esc_press = False
+        self.esc_cnt = 0
 
         self.subimg_w = 64
 
@@ -57,9 +62,13 @@ class theTopic():
             self.rx_main_cmd = np.uint16(0)
             self.rx_kinect = msgimg()
             self.rx_poseesti = UInt32()
+            #   receive cmd info from mainloop pkg
             self.sub_main = rospy.Subscriber(name="mainloop"+"_cmd",data_class=UInt32,callback=self.sub_main_callback, queue_size=2)
+            #   receive image from kinect
             self.sub_kinect = rospy.Subscriber(name="kinect2/sd/image_depth_rect",data_class=msgimg,callback=self.sub_kinect_callback, queue_size=2)
+            #   receive feedback from estimation pkg
             self.sub_poseesti_fbk = rospy.Subscriber(name="poseestimation_state",data_class=UInt32,callback=self.sub_poseesti_fbk_callback,queue_size=2)
+            #   receive count
             self.cnt_rx_main = 0
             self.cnt_rx_kinect = 0
             self.cnt_rx_poseesti_fbk = 0
@@ -77,8 +86,14 @@ class theTopic():
             self.cropidx = np.array( [(self.sub_kinect_h-self.sub_kinect_crop)*0.5, (self.sub_kinect_h+self.sub_kinect_crop)*0.5, 
                                       (self.sub_kinect_w-self.sub_kinect_crop)*0.5,  (self.sub_kinect_w + self.sub_kinect_crop)*0.5],dtype=np.uint16)
 
-            self.add_thread = threading.Thread(target=self.thread_job)
-            self.add_thread.start()
+            # self.add_thread = threading.Thread(target=self.thread_job)
+            # self.add_thread.start()
+            self.saveflg = rospy.get_param('~saveflg')
+            if self.saveflg:
+                tm = time.localtime()
+                timestr = str(tm.tm_year)+'-'+str(tm.tm_mon).rjust(2,'0') +'-'+ str(tm.tm_mday).rjust(2,'0') +'-'+ str(tm.tm_hour).rjust(2,'0') +'-'+ str(tm.tm_min).rjust(2,'0') +'-'+ str(tm.tm_sec).rjust(2,'0') 
+                self.savepath = '/homeL/zheng/Downloads/temp/1depth/' + timestr + '/' 
+                os.mkdir(self.savepath)
 
     def thread_job():
         rospy.spin()
@@ -97,7 +112,7 @@ class theTopic():
             
             self.cnt_tx += 1
             if self.cnt_tx % 40== 0:
-                rospy.loginfo("----3 %s topic tx: %d ----",self.pkgname, self.rx_main.data)
+                rospy.loginfo("----2 %s topic tx: %d ----",self.pkgname, self.rx_main.data)
 
             Info_detect2estimate.annotation[2] = 0
             self.rate_tx.sleep()
@@ -106,9 +121,13 @@ class theTopic():
         self.rx_main = msg
         self.rx_main_cnt = self.rx_main.data & 0xffff
         self.rx_main_cmd = self.rx_main.data >> 16 
+        if self.rx_main_cmd == 1:
+            self.esc_press = True
+        if self.esc_press == True:
+            self.esc_cnt += 1
 
         if self.cnt_rx_main %40 == 0:
-            rospy.loginfo("----3 %s rx main topic: data: %d, cnt: %d ----",self.pkgname , self.rx_main.data ,  self.cnt_rx_main)
+            rospy.loginfo("----2 %s rx main topic: data: %d, cnt: %d ----",self.pkgname , self.rx_main.data ,  self.cnt_rx_main)
         
         self.cnt_rx_main += 1
 
@@ -126,7 +145,7 @@ class theTopic():
         img_array = img_deserial.reshape(length,2)
         self.imgarr = np.dot(img_array , np.array([[1],[256]])).reshape(self.rx_kinect.height,self.rx_kinect.width)
 
-        #   416 * 416
+        #   416 * 416, ignore the over-far pixel, over 2000 mm
         self.imgarrcrop = self.imgarr[self.cropidx[0]:self.cropidx[1], self.cropidx[2]:self.cropidx[3]]
         self.imgarrcrop = np.clip(self.imgarrcrop,0,2000)
 
@@ -134,24 +153,16 @@ class theTopic():
         if showimage :
             depth_img255 = ( ( self.imgarrcrop - 0 ) / (2001 -0 ) * 255).astype('uint8')
 
-            # graypath = "/homeL/zheng/ros_python/tempsave/depthimage416/" + str(self.cnt_rx_kinect).rjust(5,'0') + '.png'
-            # cv2.imwrite(graypath,depth_img255)
-
             if Info_detect2estimate.annotation[0] > 0 :
-                # i=0
-                # cv2.circle(depth_img255,center=(Info_detect2estimate.annotation[1],Info_detect2estimate.annotation[0]),radius=15,color=(0,0,0),thickness= 4)
-
                 cv2.rectangle(depth_img255,(Info_detect2estimate.annotation[1]-Info_detect2estimate.annotation[4],Info_detect2estimate.annotation[0]-Info_detect2estimate.annotation[3]),
                               (Info_detect2estimate.annotation[1]+Info_detect2estimate.annotation[4],Info_detect2estimate.annotation[0]+Info_detect2estimate.annotation[3]),(0, 0, 0),thickness=3)
-                # for i in range(len_pred):
-                #     cv2.rectangle(depth_img255,(detectres[conf_sort[i]][1],detectres[conf_sort[i]][0]),(detectres[conf_sort[i]][3],detectres[conf_sort[i]][2]),(0, 0, 0),thickness=i+1)
-
             cv2.imshow("image depth, hand detection received from kinect",depth_img255)
 
-            if True:
-                graypath = "/homeL/zheng/ros_python/tempsave/handdetect0819/" + str(self.cnt_rx_kinect).rjust(5,'0') + '.png'
-                cv2.imwrite(graypath,depth_img255)
-                # np.savetxt("/homeL/zheng/ros_python/tempsave/" + str(self.cnt_rx_kinect).rjust(5,'0') + '.txt', depth_img255,fmt='%d')
+            if self.saveflg:
+                if self.rx_main_cnt % 10 == 0:
+                    graypath = self.savepath + str(self.rx_main_cnt).rjust(5,'0') + '.png'
+                    cv2.imwrite(graypath,depth_img255)
+                    # np.savetxt("/homeL/zheng/ros_python/tempsave/" + str(self.cnt_rx_kinect).rjust(5,'0') + '.txt', depth_img255,fmt='%d')
 
 
             cv2.waitKey(10)
@@ -203,6 +214,7 @@ class handDetection():
             self.start_cmd = time.time()
         self.main_cmd_f = main_cmd
         if True:
+            #   if the estimation is not done, or in the main loop, the 'pause' is just pressed
             if topic.sub_poseesti_fbk_doneflag == False or (time.time() - self.start_cmd < 2) :
                 global len_pred, conf_sort
 
@@ -229,7 +241,7 @@ class handDetection():
                         else:
                             #   the position array of the found hands.  confidence array.
                             resarr = np.array(res0[0],dtype=np.float32)
-                            condfres = np.array(res0[1],dtype=np.float32)
+                            confres = np.array(res0[1],dtype=np.float32)
 
                             detectres0 = np.clip( resarr[:, :4], 0.0 , topic.sub_kinect_crop - 1)
                             detectres = detectres0.astype(int)
@@ -240,8 +252,8 @@ class handDetection():
                                 conf_sort = 0
                             else:
                                 self.len_pred = resarr.shape[0]
-                                self.detectrefine(detectres,condfres)
-                            
+                                self.detectrefine(detectres,confres)
+                            #   save the conf_sort and len_pred in global variables
                                 conf_sort = self.conf_sort
                         len_pred = self.len_pred
 
@@ -365,10 +377,12 @@ class handDetection():
             # print('-'*30, 'com: h,w ',self.com,'len w: ',len_w, ' len h', len_h, 'shape of imgarrcrop: ',topic.imgarrcrop.shape)
             cube_ori = topic.imgarrcrop[max(0,self.com[0]-len_h):min(self.img_w *2 ,self.com[0]+len_h), max(0,self.com[1]-len_w):min(self.img_w * 2,self.com[1] + len_w) ]
             # print('create cube_ori with size:  ',cube_ori.shape)
+            #   in case of the cube is out of view field, pad it for lacked pixel
             cube_ori = np.pad(cube_ori,((abs(self.com[0]-len_h)-max(0,self.com[0]-len_h), abs(self.com[0] + len_h) - min(self.img_w *2 ,self.com[0]+len_h) ),
                                         ( abs(self.com[1]-len_w) - max(0,self.com[1]-len_w)  , abs(self.com[1] + len_w) - min(self.img_w * 2, self.com[1] + len_w))))
             # print('after pad, cube_ori with size:  ',cube_ori.shape)
             # print(cube_ori)
+            #   set the pixel that out of the cube to background, the bkg is the distance out of work length. Here, set to the furthest distance of the cube as bkg
             msk1 = np.bitwise_or(cube_ori < (self.com[2] - len_d), cube_ori > (self.com[2] + len_d))
             # msk2 = np.bitwise_and(cube_ori > (self.com[2] + len_d), cube_ori != 0)
             

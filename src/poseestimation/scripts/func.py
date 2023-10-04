@@ -29,6 +29,7 @@ class ShareData():
         self.handcentercode = 0          # for UInt32.data,   0~15 bits--> distance, 16~23 bits--> y pixel (of 128), 24~31 bits--> x pixel
         self.com = [0,0,0]
         self.com_f = [0,0,0]
+        self.keypoints20 = np.zeros(60,dtype=np.int16)
 
 sharedata = ShareData()
 
@@ -42,6 +43,9 @@ class theTopic():
         rospy.loginfo("---- " + self.pkgname + " ---- 3. import depth image ----")
         rospy.loginfo("---- " + self.pkgname + " ---- 4. estimation ----")
 
+
+        self.esc_press = False
+        self.esc_cnt = 0
         #   from image coor to tripod coor, rotate along Z,X and Y axes respectively, for following angles.
         self.theta_z = rospy.get_param('~theta_z')
         self.theta_x = rospy.get_param('~theta_x')
@@ -51,12 +55,13 @@ class theTopic():
         # print(self.Rot.as_dcm())
         # print('12121')
         #   use self.Rot.apply([px,py,pz])
-
+        
         self.tx_rate = rospy.get_param('~tx_rate')
         self.pub = pub
         self.sub = sub
         self.rx = hand() # UInt32()
-        self.rx.annotation = [0,0,250,128,128,100]
+        self.rx.annotation = [0,0,250,128,128,100]      #   0: row num, 1: column num, 2: distance mm, 3: height of pixel of half cube size, \
+                                                        #   4: width of pixel to half cube size, 5: half cube size
 
         if self.pub:
             #   to hand detection pkg
@@ -72,7 +77,7 @@ class theTopic():
             self.cnt_tx_angle = 0    
 
         if self.sub:
-            rospy.sleep(1)
+            # rospy.sleep(0.5)
             self.sub = rospy.Subscriber(name="handdetection_cmd",data_class=hand,callback=self.sub_callback, queue_size=2)
             self.cnt_rx = 0
 
@@ -80,25 +85,38 @@ class theTopic():
             self.datalength = 0
             self.handarea128_update = False
 
+            self.mainloop_cnt = 0
+
+        self.saveflg = rospy.get_param('~saveflg')
+
 
     def publish_state(self):
         #   feedback the state of the estimation to the hand detection pkg, including the wrist point location (com)
         global sharedata
         self.tx_state.data = sharedata.handcentercode
         self.pub_state.publish(self.tx_state)
-        if self.cnt_tx_state % 10 == 0:
-            rospy.loginfo("----4 %s topic tx angle: %d ----gesture_state: %d, trackenable: %d .",self.pkgname,self.tx_state.data ,sharedata.gesturests, sharedata.trackenable)
-            rospy.loginfo("the center code: %d ",sharedata.handcentercode)
+        # if self.cnt_tx_state % 40 == 0:
+        #     rospy.loginfo("----4 %s topic tx state: %d ----gesture_state: %d, trackenable: %d .",self.pkgname,self.tx_state.data ,sharedata.gesturests, sharedata.trackenable)
+        #     rospy.loginfo("---- 4 tx, the hand center code: %d ",sharedata.handcentercode)
         self.cnt_tx_state += 1
 
     def publish_angle(self):
+        global sharedata
         #    contain the key points location in wrist frame, to the bio_ik pkg. unit: 0.01 mm
         if self.pub:
-            self.tx_angle.data = (self.cnt_tx_angle & 0xffff) + (( 0 & 0xffff)<<16)
+            if self.esc_press == True:
+                self.esc_cnt += 1
+
+
+            # self.tx_angle.data = (self.cnt_tx_angle & 0xffff) + (( 0 & 0xffff)<<16)
+            self.tx_angle.data = sharedata.keypoints20
+            self.tx_angle.cmd = self.rx.cmd
+
             # self.pub.publish(self.tx)
             self.pub_angle.publish(self.tx_angle)
-            if self.cnt_tx_angle % 10 == 0:
-                rospy.loginfo("----4 %s topic tx angle: %d ----",self.pkgname,self.rx.cmd)
+            if (self.rx.cmd & 0xffff) % 10 == 0:
+                rospy.loginfo("----4 %s topic tx. the rx_cmd: %d ---- sent in total %d  ",self.pkgname,self.rx.cmd, self.cnt_tx_angle)
+                # print('----4 the estimated points in * wrist * frame in poseestimation pkg: ', sharedata.keypoints20)
             self.cnt_tx_angle += 1
             self.rate_tx_angle.sleep()
 
@@ -106,9 +124,19 @@ class theTopic():
     def sub_callback(self,msg):
         global sharedata
         if self.sub:
+
+            
             #   self.rx = hand()
             self.rx  = msg
             sharedata.com = self.rx.annotation[0:3]
+
+            self.mainloop_cnt = self.rx.cmd & 0xffff
+            # if self.cnt_rx % 10 == 0:
+            #     rospy.loginfo("----4 %s rx cmd: %d,   hand area distance: %d     ----",self.pkgname, msg.cmd , self.rx.annotation[2])
+            if self.rx.cmd >> 16 == 1:
+                self.esc_press = True
+            
+
 
             # self.datalength = len(msg.data)
             if self.rx.annotation[2] > 300:
@@ -120,8 +148,8 @@ class theTopic():
                 # print('type: ',type(self.handarea128), '.  shape: ',self.handarea128.shape)
                 # print(self.handarea128[50])
                 self.handarea128_update = True
-                if self.cnt_rx % 10 == 0:
-                    rospy.loginfo("----4 %s rx cmd: %d,        ----",self.pkgname, msg.cmd)
+                # if self.cnt_rx % 10 == 0:
+                #     rospy.loginfo("----4 %s rx cmd: %d,        ----",self.pkgname, msg.cmd)
 
 
                 showimg = False
@@ -136,8 +164,8 @@ class theTopic():
 
 
             else:
-                print('4: rx cmd',msg.cmd,' and empty data')
-
+                print('----4 : rx cmd',msg.cmd,' and empty data')
+                
             self.cnt_rx += 1
 
 
@@ -170,18 +198,21 @@ class poseEstimation():
         self.ctrlenable = -1            #   control robotic hand
         self.trackenable = -1           #   feedback handcenter to hand detection
         
-        tm = time.localtime()
-        timestr = str(tm.tm_year)+'-'+str(tm.tm_mon).rjust(2,'0') +'-'+ str(tm.tm_mday).rjust(2,'0') +'-'+ str(tm.tm_hour).rjust(2,'0') +'-'+ str(tm.tm_min).rjust(2,'0') +'-'+ str(tm.tm_sec).rjust(2,'0') 
-        self.savepath = '/homeL/zheng/Downloads/temp/' + timestr + '/' 
-        os.mkdir(self.savepath)
-        
-        self.filehandle = open(self.savepath + timestr + '.txt','w')
+        if topic.saveflg:
+            tm = time.localtime()
+            timestr = str(tm.tm_year)+'-'+str(tm.tm_mon).rjust(2,'0') +'-'+ str(tm.tm_mday).rjust(2,'0') +'-'+ str(tm.tm_hour).rjust(2,'0') +'-'+ str(tm.tm_min).rjust(2,'0') +'-'+ str(tm.tm_sec).rjust(2,'0') 
+            self.savepath = '/homeL/zheng/Downloads/temp/0hand/' + timestr + '/' 
+            os.mkdir(self.savepath)
+            
+            self.filehandle = open(self.savepath + timestr + '.txt','w')
 
-        self.filehandle.write('matrix: ' + '\n')
-        self.filehandle.write(str(topic.Rot.as_dcm())+'\n')
+            # self.filehandle.write('matrix: ' + '\n')
+            self.filehandle.write('---- save the key points results in ground frame and wrist frame || also save the unit vector of wrist frame ----'+'\n')
 
         #   the order re-map from the predictions to the physical model frame, wrist frame.
         # self.index_remap = np.array([])
+
+        self.tf_grd2rst = np.zeros((3,3),dtype=np.float32)
         
     def run(self):
         if self.init == False:
@@ -191,19 +222,19 @@ class poseEstimation():
                 self.pred.run_realtime_init()
 
                 #       *******--------     change to proper inputs please   -------------******************
-                print('init poseestimate--> run')
+                print('----4 init poseestimate--> run')
                 self.inputs = torch.rand((1,1,128,128)).to("cuda:0") * 2 - 1
                 pred_out = self.pred.run_realtime(self.inputs)
 
                 preds  =  pred_out[0,:,:]
-                print('preds pre process: ',preds)
+                # print('preds pre process: ',preds)
                 self.img2grd(preds0=preds)
 
-                print('-*'*50)
-                print('preds_3d: ',self.preds_3d)
-                print('M: ',topic.Rot.as_dcm())
-                print('preds_ground: ',self.preds_ground)
-                print('handcenter: ',self.handcenter)
+                # print('-*'*50)
+                # print('preds_3d: ',self.preds_3d)
+                # print('M: ',topic.Rot.as_dcm())
+                # print('preds_ground: ',self.preds_ground)
+                # print('handcenter: ',self.handcenter)
 
                 self.gesturestatemachine()
 
@@ -235,14 +266,16 @@ class poseEstimation():
 
                 self.img2grd(preds0=preds)
 
+                self.grd2wrist()
+
                 self.gesturestatemachine()
 
                 self.dataupdate()
 
-                print('-*'*50)
-                # print('preds: ',preds)
-                print('preds_ground: ',self.preds_ground)
-                print('handcenter: ',self.handcenter)
+                # print('-*'*50)
+                # # print('preds: ',preds)
+                # print('preds_ground: ',self.preds_ground)
+                # print('handcenter: ',self.handcenter)
 
 
 
@@ -255,14 +288,10 @@ class poseEstimation():
                 self.cnt += 1
                 self.handarea128_updata = False
 
-
-
-
                 showimg = True
                 if showimg:
                     # print('pred_out size',pred_out.shape,'pred_out: ',pred_out)
 
-                    
                     # print('preds: ',preds)
 
                     depth_img255 = ( ( topic.handarea128  +1 ) / 2 * 255).astype('uint8')
@@ -274,26 +303,32 @@ class poseEstimation():
                     cv2.imshow('depth image of the hand in pose estimation ',imgrgb)
                     cv2.waitKey(10)
 
-                    if False:
-                        cv2.imwrite(self.savepath + str(self.cnt).rjust(5,'0') + '.png',imgrgb)
-                        self.filehandle.write(str(self.cnt).rjust(5,'0') + '\n')
+                    if topic.saveflg:
+                        if topic.mainloop_cnt % 10 ==0:
+                            cv2.imwrite(self.savepath + str(topic.mainloop_cnt).rjust(5,'0') + '.png',imgrgb)
 
-                        # self.filehandle.write('original preds: ' + '\n')
-                        # self.filehandle.write(str(self.preds_original) + '\n')
 
-                        self.filehandle.write('annotation: ' + '\n')
-                        self.filehandle.write(str(topic.rx.annotation) + '\n')
+                            self.filehandle.write(str(topic.mainloop_cnt).rjust(5,'0') + '\n')
 
-                        # self.filehandle.write('3D preds: ' + '\n')
-                        # self.filehandle.write(str(self.preds_3d) + '\n')
+                            # self.filehandle.write('original preds: ' + '\n')
+                            # self.filehandle.write(str(self.preds_original) + '\n')
 
-                        self.filehandle.write('self.gesturejudge: ' + '\n')
-                        self.filehandle.write(str(self.gesturejudge) + '\n')
+                            self.filehandle.write('annotation: ' + '\n')
+                            self.filehandle.write(str(topic.rx.annotation) + '\n')
 
-                        self.filehandle.write('ground preds: ' + '\n')
-                        self.filehandle.write(str(self.preds_ground) + '\n')
-                        
-                        self.filehandle.write('*'*30 + '\n'*2)
+                            self.filehandle.write('self.tf_grd2rst: ' + '\n')
+                            self.filehandle.write(str(self.tf_grd2rst) + '\n')
+
+                            self.filehandle.write('self.preds_3d: ' + '\n')
+                            self.filehandle.write(str(self.preds_3d) + '\n')
+
+                            self.filehandle.write('ground preds: ' + '\n')
+                            self.filehandle.write(str(self.preds_ground) + '\n')
+
+                            self.filehandle.write('wrist preds: ' + '\n')
+                            self.filehandle.write(str(self.preds_wrist) + '\n')
+                            
+                            self.filehandle.write('*'*30 + '\n'*2)
 
 
 
@@ -410,12 +445,14 @@ class poseEstimation():
 
 
 
-    def physics(self):
+    def grd2wrist(self):
+        global sharedata
         #   turn the preds to wrist frame.
         #   x axis: in palm plane, vertical to y axis.
         #   y axis: in palm plane, in middle of the index and ring fingers.
         #   z axis: vertical to palm
         preds_3d = self.preds_ground - self.preds_ground[0,:]
+        self.preds_3d = preds_3d
 
         #   determine the y axis, the vector from wrist to MCPs of 4 fingers
         v_if = self.preds_3d[1,:]
@@ -461,11 +498,21 @@ class poseEstimation():
 
         #   above x y z are the axes of the wrist frame expressed  in ground frame 
         #   so, from the ground frame to the wrist frame, the transform matrix is:
-        tf_grd2rst = np.array([v_x, v_y, v_z])
+        self.tf_grd2rst = np.array([v_x, v_y, v_z])
 
         #   20 points in wrist frame. size: 20*3
-        self.preds_wrist = np.dot(tf_grd2rst,preds_3d[1:,:].T).T
-        self.preds_wrist_1 = np.reshape(self.preds_wrist,(60,1))
+        self.preds_wrist = np.dot(self.tf_grd2rst,preds_3d[1:,:].T).T
+        # print('self.preds_wrist: ', self.preds_wrist)
+        self.preds_wrist_1 = self.preds_wrist.flatten()
+
+        # print('type and shape of the preds_wrist_1: ', type(self.preds_wrist_1), self.preds_wrist_1.shape)
+        # print('self.preds_wrist_1',self.preds_wrist_1)
+        # print('type and shape of the sharedata.keypoints20: ', type(sharedata.keypoints20), sharedata.keypoints20.shape)
+        # # 
+        #   unit: 0.01mm, 20 key poionts location, without the wrist poiont, in wrist frame
+        preds_wrist_1_unit = self.preds_wrist_1 * 100
+        sharedata.keypoints20 = preds_wrist_1_unit.astype(np.int16)
+        # print('sharedata.keypoints20: ',sharedata.keypoints20)
 
 
 
