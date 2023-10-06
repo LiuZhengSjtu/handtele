@@ -420,7 +420,8 @@ class handDetection():
             # print(self.cube_norm.shape,'\n',self.cube_norm)
 
         else:
-            print( 'no hand found ')
+            # print( 'no hand found ')
+            pass
 
 
 topic = theTopic()

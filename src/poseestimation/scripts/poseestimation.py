@@ -26,4 +26,5 @@ if __name__ == "__main__":
         topic.publish_angle()
 
         if topic.cnt_tx_angle >  poseesti.endcnt or topic.esc_cnt > 6:
+            rospy.signal_shutdown(' esc ')
             break

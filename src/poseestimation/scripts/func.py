@@ -135,6 +135,8 @@ class theTopic():
             #     rospy.loginfo("----4 %s rx cmd: %d,   hand area distance: %d     ----",self.pkgname, msg.cmd , self.rx.annotation[2])
             if self.rx.cmd >> 16 == 1:
                 self.esc_press = True
+            elif self.rx.cmd >> 16 == 2:
+                sharedata.trackenable = -1
             
 
 
