@@ -85,12 +85,13 @@
     <node pkg="bio_ik_service" type="bio_ik_service" name="bio_ik_service" output="screen">
     </node>
 
+    <!-- 
     <node pkg="bio_ik_service" type="bio_ik_service2" name="bio_ik_service2" output="screen">
     </node>
-
+    -->
 
     <!-- for bio_ik optimazation, adopt physical model to regularize the keypoints -->
-    <node pkg="bio_ik_service_examples" type="physical_hand_bio_ik.py" name="get_bio_ik_hand_angle" output="screen">
+    <node pkg="ikfk" type="physical_hand_bio_ik.py" name="get_bio_ik_hand_angle" output="screen">
     <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
     <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
     </node>
