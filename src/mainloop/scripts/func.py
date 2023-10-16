@@ -2,7 +2,7 @@
 
 from pynput import keyboard 
 import rospy # 1.导包
-from std_msgs.msg import UInt32
+from std_msgs.msg import UInt32, UInt64
 import numpy as np
 import time
 
@@ -15,10 +15,13 @@ class keyboard_detect():
         self.detect()
         self.time_restart = 0
 
+        self.esc_pressed = 0
+
     def on_press(self,key):
         if key == keyboard.Key.esc:
             # Stop listener, stop and wait
             self.state = 1
+            self.esc_pressed = 1
         elif key == keyboard.Key.pause:
             #   restart (don't need to initial again)
             self.state = 2
@@ -31,6 +34,8 @@ class keyboard_detect():
         if self.state == 2 and time.time() - self.time_restart > 1:
             self.state = 0
 
+        if self.esc_pressed > 0:
+            self.esc_pressed += 1
         # print(self.state)
         return self.state
 
@@ -38,28 +43,25 @@ class keyboard_detect():
 class theTopic():
     def __init__(self,name="mainloop",rate_tx=1,rate_rx=1) -> None:
         self.pkgname = name
-        rospy.init_node(self.pkgname)  # 2.初始化 ROS 节点
-        rospy.loginfo("---- "+self.pkgname+" ---- Start the mainloop, state control ----")  #3.日志输出 HelloWorld
-        rospy.loginfo("---- "+self.pkgname+" ---- 1. send cmd to func_1 - deal with hand area detection ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 2. send cmd to func_2 - deal with hand position estimation ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 3. send cmd to func_3 - data saving ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 4. send cmd to func_4 - position reschedule ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 5. send cmd to func_5 - communicate with SHADOW ----")
+        rospy.init_node(self.pkgname)  # 初始化 ROS 节点
+        rospy.loginfo("---- "+self.pkgname+" ---- Start the mainloop, state control ----")  
+
 
         rate_tx =  rospy.get_param('~tx_rate')
 
-        self.pub = rospy.Publisher(self.pkgname+"_cmd", UInt32,queue_size=10)
-        self.tx = UInt32()
+        self.pub = rospy.Publisher(self.pkgname+"_cmd", UInt64,queue_size=10)
+        self.tx = UInt64()
         self.rate = rospy.Rate(rate_tx)
-        self.cnt = np.uint16(0)    #   low 16 bits
-        self.cmd = np.uint16(0)    #   high 16 bits
+        self.cnt = np.uint32(0)    #   low 32 bits
+        self.cmd = np.uint64(0)    #   high 32 bits
 
     def publish(self, state = 0 ):
         self.cmd = state
 
-        self.tx.data = (self.cnt & 0xffff) + ((self.cmd & 0xffff)<<16)
+
+        self.tx.data = (self.cnt ) | ((self.cmd )<<32)
         self.pub.publish(self.tx)
-        # rospy.loginfo("----1 %s topic tx: %d ----",self.pkgname,self.tx.data)
+        rospy.loginfo("----1 %s topic tx cnt: %d ----",self.pkgname,self.cnt)
         self.cnt += 1
 
         self.rate.sleep()

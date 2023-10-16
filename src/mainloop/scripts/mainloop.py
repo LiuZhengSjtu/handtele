@@ -24,7 +24,7 @@ if __name__ == "__main__":
    
         topic.publish(state = kybd.updatastate())
 
-        if topic.cnt > mloop.endcnt:
+        if topic.cnt > mloop.endcnt or kybd.esc_pressed > 15:
             break
         
       

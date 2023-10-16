@@ -1,0 +1,17 @@
+<launch>    
+    
+    <!--  <group ns = "physical_hand"> 
+        <param name="tf_prefix" value="physical_hand" />  -->
+        <include file = "$(find physical_hand)/launch/demo.launch" />
+        
+        <!-- <param name="physical_hand" textfile="$(find phy_hand)/urdf/phy_hand.urdf"/> 
+
+        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher_phy" output="screen" >
+            <param name="publish_frequency" type="double" value="30.0" />
+            <remap from="robot_description" to="physical_hand" />
+            <remap from="joint_states" to="different_joint_states" />
+        </node>   -->
+    <!-- </group> -->
+    
+
+</launch>

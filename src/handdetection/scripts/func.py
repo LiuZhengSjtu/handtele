@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 import rospy # 1.导包
-from std_msgs.msg import UInt32, UInt16
+from std_msgs.msg import UInt32, UInt16, UInt64
 from yolov7_tiny_pytorch import predict
 from mainloop.msg import hand
 import numpy as np
@@ -31,12 +31,8 @@ class theTopic():
         Info_detect2estimate.data = np.ones((128,128),dtype=UInt16).flatten().tolist()
 
         self.pkgname = name
-        rospy.init_node(self.pkgname)  # 2.初始化 ROS 节点
-        rospy.loginfo("---- "+self.pkgname+" ---- Start the hande detection----")  #3.日志输出 HelloWorld
-        rospy.loginfo("---- "+self.pkgname+" ---- 1. receive cmd from mainloop  ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 2. send results to mainloop ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 3. import depth image ----")
-        rospy.loginfo("---- "+self.pkgname+" ---- 4. detection ----")
+        rospy.init_node(self.pkgname)  # 初始化 ROS 节点
+        rospy.loginfo("---- "+self.pkgname+" ---- Start the hande detection----")  
 
         self.esc_press = False
         self.esc_cnt = 0
@@ -57,13 +53,13 @@ class theTopic():
 
         if sub:
             rospy.sleep(1)
-            self.rx_main = UInt32()
-            self.rx_main_cnt = np.uint16(0)
-            self.rx_main_cmd = np.uint16(0)
+            self.rx_main = UInt64()
+            self.rx_main_cnt = np.uint32(0)
+            self.rx_main_cmd = np.uint32(0)
             self.rx_kinect = msgimg()
             self.rx_poseesti = UInt32()
             #   receive cmd info from mainloop pkg
-            self.sub_main = rospy.Subscriber(name="mainloop"+"_cmd",data_class=UInt32,callback=self.sub_main_callback, queue_size=2)
+            self.sub_main = rospy.Subscriber(name="mainloop"+"_cmd",data_class=UInt64,callback=self.sub_main_callback, queue_size=2)
             #   receive image from kinect
             self.sub_kinect = rospy.Subscriber(name="kinect2/sd/image_depth_rect",data_class=msgimg,callback=self.sub_kinect_callback, queue_size=2)
             #   receive feedback from estimation pkg
@@ -104,32 +100,35 @@ class theTopic():
         # print('annotation: ',Info_detect2estimate.annotation, '.  type: ',type(Info_detect2estimate.annotation))
         if Info_detect2estimate.annotation[2] > 0 :
             self.handarea128.annotation = Info_detect2estimate.annotation
-            self.handarea128.cmd = self.rx_main.data
+            self.handarea128.cmd = self.rx_main_cmd
+            self.handarea128.cnt = self.rx_main_cnt
             self.handarea128.data = Info_detect2estimate.data
             # self.handarea128.data = np.ones((128,128),dtype=UInt16).flatten().tolist()
             # Info_detect2estimate.annotation = np.array([1,2,3,4,5,6],dtype=np.uint16).flatten().tolist
             self.pub_pose.publish(self.handarea128)
             
             self.cnt_tx += 1
-            if self.cnt_tx % 40== 0:
-                rospy.loginfo("----2 %s topic tx: %d ----",self.pkgname, self.rx_main.data)
+            # if self.cnt_tx % 40== 0:
+            rospy.loginfo("----2 %s topic tx, rxcnt: %d ----",self.pkgname, self.rx_main_cnt)
 
             Info_detect2estimate.annotation[2] = 0
             self.rate_tx.sleep()
 
     def sub_main_callback(self,msg):
         self.rx_main = msg
-        self.rx_main_cnt = self.rx_main.data & 0xffff
-        self.rx_main_cmd = self.rx_main.data >> 16 
+        self.rx_main_cnt = self.rx_main.data & 0xffffffff
+        self.rx_main_cmd = self.rx_main.data >> 32
         if self.rx_main_cmd == 1:
             self.esc_press = True
         if self.esc_press == True:
             self.esc_cnt += 1
 
-        if self.cnt_rx_main %40 == 0:
-            rospy.loginfo("----2 %s rx main topic: data: %d, cnt: %d ----",self.pkgname , self.rx_main.data ,  self.cnt_rx_main)
+        # if self.cnt_rx_main %40 == 0:
+        rospy.loginfo("----2 %s rx main topic: data: %d, cnt: %d ----",self.pkgname , self.rx_main.data ,  self.cnt_rx_main)
         
         self.cnt_rx_main += 1
+
+        # print('in hand detection, cnt and rx_main_cmd: ', self.rx_main_cnt, self.rx_main_cmd)
 
     def sub_kinect_callback(self,msg):
         global len_pred, conf_sort, Info_detect2estimate
@@ -259,8 +258,9 @@ class handDetection():
 
                         topic.sub_kinect_newflag = False
             else:
-                delt_x = int((topic.pix_x - 64) / 64 * self.cube_pix_num_w_half)
-                delt_y = int((topic.pix_y - 64) / 64 * self.cube_pix_num_h_half)
+                rate = 0.75                     #   proportional control of visual servo control
+                delt_x = int((topic.pix_x - 64) / 64 * self.cube_pix_num_w_half * rate)
+                delt_y = int((topic.pix_y - 64) / 64 * self.cube_pix_num_h_half * rate)
                 # delt_z = topic.distance
                 self.com[0] = self.com[0] + delt_y
                 self.com[1] = self.com[1] + delt_x

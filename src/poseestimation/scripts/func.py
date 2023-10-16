@@ -11,6 +11,7 @@ from scipy.spatial.transform import Rotation as R
 import time
 import os
 
+LEFTHAND =True
 
 class Color():
     RED = (0, 0, 255)
@@ -30,6 +31,8 @@ class ShareData():
         self.com = [0,0,0]
         self.com_f = [0,0,0]
         self.keypoints20 = np.zeros(60,dtype=np.int16)
+        self.wrist_grd = np.zeros(3,dtype=np.float32)
+        self.tf_grd2rst = np.zeros((3,3), dtype=np.float32)
 
 sharedata = ShareData()
 
@@ -109,13 +112,22 @@ class theTopic():
 
 
             # self.tx_angle.data = (self.cnt_tx_angle & 0xffff) + (( 0 & 0xffff)<<16)
-            self.tx_angle.data = sharedata.keypoints20
-            self.tx_angle.cmd = self.rx.cmd
+
+            #   tx data contains 20 points(60, unit: 0.01 mm), tf(9, unit: 0.001), and wrist grd location (3, unit: 0.1 mm). --- 72 ---
+
+            transf = (sharedata.tf_grd2rst.flatten() * 1000).astype(np.int16)
+            wrist = (sharedata.wrist_grd *10 ).astype(np.int16)
+            tx_data = np.concatenate([sharedata.keypoints20, transf])
+
+            self.tx_angle.data = np.concatenate([tx_data, wrist])
+            self.tx_angle.cmd = self.rx.cmd 
+            self.tx_angle.cnt = self.rx.cnt
+            self.tx_angle.annotation = [sharedata.trackenable + 1 ]
 
             # self.pub.publish(self.tx)
             self.pub_angle.publish(self.tx_angle)
-            if (self.rx.cmd & 0xffff) % 10 == 0:
-                rospy.loginfo("----4 %s topic tx. the rx_cmd: %d ---- sent in total %d  ",self.pkgname,self.rx.cmd, self.cnt_tx_angle)
+            # if (self.rx.cmd ) % 10 == 0:
+            rospy.loginfo("----4 %s topic tx. the rx_cmd: %d ---- mainloopcnt %d  ",self.pkgname,self.rx.cmd, self.mainloop_cnt)
                 # print('----4 the estimated points in * wrist * frame in poseestimation pkg: ', sharedata.keypoints20)
             self.cnt_tx_angle += 1
             self.rate_tx_angle.sleep()
@@ -130,15 +142,15 @@ class theTopic():
             self.rx  = msg
             sharedata.com = self.rx.annotation[0:3]
 
-            self.mainloop_cnt = self.rx.cmd & 0xffff
+            self.mainloop_cnt = self.rx.cnt
             # if self.cnt_rx % 10 == 0:
-            #     rospy.loginfo("----4 %s rx cmd: %d,   hand area distance: %d     ----",self.pkgname, msg.cmd , self.rx.annotation[2])
-            if self.rx.cmd >> 16 == 1:
+            rospy.loginfo("----4 %s rx cmd: %d,   mainloop_cnt: %d     ----",self.pkgname, msg.cmd , self.mainloop_cnt)
+            if self.rx.cmd == 1:
                 self.esc_press = True
-            elif self.rx.cmd >> 16 == 2:
-                sharedata.trackenable = -1
             
 
+            
+            # print('in pose estimation, mainloop cnt and cmd are: ', self.rx.cnt, self.rx.cmd)
 
             # self.datalength = len(msg.data)
             if self.rx.annotation[2] > 300:
@@ -249,9 +261,21 @@ class poseEstimation():
             # print("estimate inti = false")
         else:
             #   read sub-image from KinectV2, and then normalize it to a tensor((1,1,128,128))
+
+            if topic.rx.cmd == 2:
+                self.trackenable = -1
+                sharedata.trackenable = -1
+                # print('---------- trackenable: ', sharedata.trackenable)
+
             if topic.handarea128_update:
                 topic.handarea128_update = False
-                subimg0 = torch.from_numpy(topic.handarea128)
+
+                if LEFTHAND == True:
+                    handarea128_0 = np.flip(topic.handarea128, axis= 1)
+                else:
+                    handarea128_0 = topic.handarea128
+                handarea128 = handarea128_0.copy()
+                subimg0 = torch.from_numpy(handarea128)
                 # self.subimg = subimg0[None,None,:,:].to("cuda:0")
                 self.inputs[0,0,:,:] = subimg0
 
@@ -263,7 +287,13 @@ class poseEstimation():
 
                 #   predict
                 pred_out = self.pred.run_realtime(self.inputs)
+
+                #   preds: 21 * 3, (x, y, z)
                 preds  =  pred_out[0,:,:]
+
+                if LEFTHAND == True:
+                    preds[:,0] = 128 - preds[:,0]
+
                 self.preds_original = preds
 
                 self.img2grd(preds0=preds)
@@ -339,7 +369,7 @@ class poseEstimation():
         #   draw key points by circles.
 #       wrist(1) + index(4,mcp, pip, dip, tip) + middle(4) + ring(4) +little(4) + thumber(4)
         length = preds.shape[0]
-        
+
         for j in range(length):
             i = j + 3                   #   3 - 23
             size = np.mod(i,4)+1        #   1-4 --> mcp, pip, dip, tip
@@ -352,7 +382,7 @@ class poseEstimation():
 
             #   not track (0,0,254) red, track (254,0,0) blue
             cv2.putText(imgrgb,str(self.gesturests),(100,20),cv2.FONT_HERSHEY_SIMPLEX,0.75,color=( 127 + 127 * self.trackenable, 0, 127 - 127 * self.trackenable),thickness=2)
-
+            # print('--------- at sub pic outpu, the trackenalbe: ',self.trackenable)
             
         return imgrgb
 
@@ -453,6 +483,7 @@ class poseEstimation():
         #   x axis: in palm plane, vertical to y axis.
         #   y axis: in palm plane, in middle of the index and ring fingers.
         #   z axis: vertical to palm
+        sharedata.wrist_grd = self.preds_ground[0,:]
         preds_3d = self.preds_ground - self.preds_ground[0,:]
         self.preds_3d = preds_3d
 
@@ -501,6 +532,7 @@ class poseEstimation():
         #   above x y z are the axes of the wrist frame expressed  in ground frame 
         #   so, from the ground frame to the wrist frame, the transform matrix is:
         self.tf_grd2rst = np.array([v_x, v_y, v_z])
+        sharedata.tf_grd2rst = self.tf_grd2rst
 
         #   20 points in wrist frame. size: 20*3
         self.preds_wrist = np.dot(self.tf_grd2rst,preds_3d[1:,:].T).T
@@ -513,8 +545,12 @@ class poseEstimation():
         # # 
         #   unit: 0.01mm, 20 key poionts location, without the wrist poiont, in wrist frame
         preds_wrist_1_unit = self.preds_wrist_1 * 100
+
+
         sharedata.keypoints20 = preds_wrist_1_unit.astype(np.int16)
         # print('sharedata.keypoints20: ',sharedata.keypoints20)
+
+        #   20 point, and wrist position, and tf
 
 
 
