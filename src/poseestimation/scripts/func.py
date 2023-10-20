@@ -127,7 +127,7 @@ class theTopic():
             # self.pub.publish(self.tx)
             self.pub_angle.publish(self.tx_angle)
             # if (self.rx.cmd ) % 10 == 0:
-            rospy.loginfo("----4 %s topic tx. the rx_cmd: %d ---- mainloopcnt %d  ",self.pkgname,self.rx.cmd, self.mainloop_cnt)
+            # rospy.loginfo("----4 %s topic tx. the rx_cmd: %d ---- mainloopcnt %d  ",self.pkgname,self.rx.cmd, self.mainloop_cnt)
                 # print('----4 the estimated points in * wrist * frame in poseestimation pkg: ', sharedata.keypoints20)
             self.cnt_tx_angle += 1
             self.rate_tx_angle.sleep()
@@ -144,7 +144,7 @@ class theTopic():
 
             self.mainloop_cnt = self.rx.cnt
             # if self.cnt_rx % 10 == 0:
-            rospy.loginfo("----4 %s rx cmd: %d,   mainloop_cnt: %d     ----",self.pkgname, msg.cmd , self.mainloop_cnt)
+            # rospy.loginfo("----4 %s rx cmd: %d,   mainloop_cnt: %d     ----",self.pkgname, msg.cmd , self.mainloop_cnt)
             if self.rx.cmd == 1:
                 self.esc_press = True
             
@@ -478,6 +478,9 @@ class poseEstimation():
 
 
     def grd2wrist(self):
+        #   order: y,z,x
+        #   compare the Left and Right hand frame, y points to finger tip, x points to th, z points to back palm in Left frame and points to front palm in Right frame.
+        #   so, inverse the z value to the Right frame mirror.
         global sharedata
         #   turn the preds to wrist frame.
         #   x axis: in palm plane, vertical to y axis.

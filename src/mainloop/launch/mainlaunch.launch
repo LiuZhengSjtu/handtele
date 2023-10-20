@@ -1,51 +1,29 @@
 <launch>
     <arg name="path0"   default="/src/poseestimation/scripts/TriHornNet/ckpt" />
-    <arg name="endcnt"  default = "1000" />
+    <arg name="endcnt"  default = "100000" />
     <arg name="tx_rate" default = "10" />
-    <arg name="saveflg" default = "true" />
+    <arg name="saveflg" default = "false" />
 
+    <arg name="ns_ph" default="phy_hand"/>
+    
+    <group ns="$(arg ns_ph)">
+        <!-- for physical hand model -->
+        <include  file="$(find physical_hand)/launch/demo.launch">
+        </include>
 
-
-    <!-- for hand physical model, start urdf moveit, robot_description: phy_hand -->
-    <!--    
-    <group ns = "physical_hand">
-        <param name="tf_prefix" value="physical_hand" />
-        <include file = "$(find physical_hand)/launch/demo.launch" />
-
-        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher_phy" output="screen" >
-            <param name="publish_frequency" type="double" value="30.0" />
+        <!-- for bio_ik service -->
+        <node pkg="bio_ik_service" type="bio_ik_service" name="bio_ik_service" output="screen">
         </node>
     </group>
 
-    <group ns = "ursrh">
-        <param name="tf_prefix" value="physical_hand" />
-        <include file = "$(find sr_ur)/launch/demo.launch" />
 
-        <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher_sha" >
-            <param name="publish_frequency" type="double" value="30.0" />
-        </node>
-    </group>
-    -->
+    <!-- ************************************************************************************************** -->
 
-    
-    <!--  for physical hand urdf      -->
-    <include  file="/homeL/zheng/ros_python/tst/ws_moveit/src/physical_hand/launch/demo.launch">
-    </include>
-    
-
-
-
-
-    <!--    for ur + shadow hand model. robot_description: ursrh  
-    <include  file="/homeL/zheng/ros_python/tst/ws_moveit/src/sr_ur/launch/demo.launch">
-    </include>
-      -->
-
-
-
-
-
-
+    <!-- for bio_ik optimazation, adopt physical model to regularize the keypoints -->
+    <node pkg="bio_ik_service_examples" type="physical_hand_bio_ik.py" name="get_bio_ik_hand_position" output="screen">
+        <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
+        <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
+    </node>
 
     <!-- for kinect -->
     <include file="/homeL/zheng/catkin_ws/src/iai_kinect2/kinect2_bridge/launch/kinect2_bridge.launch">
@@ -78,25 +56,5 @@
         <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
     </node>
 
-
-
-    
-    <!-- for bio_ik service -->
-    <node pkg="bio_ik_service" type="bio_ik_service" name="bio_ik_service" output="screen">
-    </node>
-
-    <!-- 
-    <node pkg="bio_ik_service" type="bio_ik_service2" name="bio_ik_service2" output="screen">
-    </node>
-    -->
-
-    <!-- for bio_ik optimazation, adopt physical model to regularize the keypoints -->
-    <node pkg="ikfk" type="physical_hand_bio_ik.py" name="get_bio_ik_hand_angle" output="screen">
-    <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
-    <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
-    </node>
-
-
-    
-    <!--     roslaunch kinect2_bridge kinect2_bridge.launch                                 -->  
+    <!--     roslaunch mainloop mainlaunch.launch                               -->  
 </launch>

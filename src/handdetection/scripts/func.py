@@ -109,7 +109,7 @@ class theTopic():
             
             self.cnt_tx += 1
             # if self.cnt_tx % 40== 0:
-            rospy.loginfo("----2 %s topic tx, rxcnt: %d ----",self.pkgname, self.rx_main_cnt)
+            # rospy.loginfo("----2 %s topic tx, rxcnt: %d ----",self.pkgname, self.rx_main_cnt)
 
             Info_detect2estimate.annotation[2] = 0
             self.rate_tx.sleep()
@@ -124,7 +124,7 @@ class theTopic():
             self.esc_cnt += 1
 
         # if self.cnt_rx_main %40 == 0:
-        rospy.loginfo("----2 %s rx main topic: data: %d, cnt: %d ----",self.pkgname , self.rx_main.data ,  self.cnt_rx_main)
+        # rospy.loginfo("----2 %s rx main topic: data: %d, cnt: %d ----",self.pkgname , self.rx_main.data ,  self.cnt_rx_main)
         
         self.cnt_rx_main += 1
 

@@ -1,0 +1,51 @@
+<launch>
+
+    <arg name="ns_ph" default="phy_hand"/>
+    <arg name="ns_sr" default="shadow"/>
+
+<!-- 
+    <group ns="$(arg ns_ph)">
+        <include file="$(find mypack)/launch/robot.launch">
+            <arg name="namespace" value="$(arg ns_ph)" /> 
+        </include>
+    </group>
+-->
+
+    <group ns="$(arg ns_ph)">
+        <param name="robot_description" textfile="$(find phy_hand)/urdf/phy_hand.urdf" />
+        <param name="robot_description_semantic" textfile="$(find physical_hand)/config/phy_hand.srdf" />
+
+        <rosparam command="load" file="$(find physical_hand)/config/joint_limits.yaml"/>
+        <rosparam command="load" file="$(find physical_hand)/config/cartesian_limits.yaml"/>
+
+        <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+
+        <include file="$(find physical_hand)/launch/moveit_rviz.launch">
+            <arg name="rviz_config" value="$(dirname)/moveit.rviz"/>
+            <arg name="debug" value="false"/>
+        </include>
+    </group>
+
+    <group ns="$(arg ns_sr)">
+        <param name="robot_description" command="$(find xacro)/xacro '$(find tams_f329_description)/urdf/tams_f329_with_left_motorhand.xacro'" />
+        <param name="robot_description_semantic" textfile="$(find tams_f329_with_left_motorhand_moveit_config)/config/tams_f329_with_left_motorhand.srdf" />
+
+        <rosparam command="load" file="$(find tams_f329_with_left_motorhand_moveit_config)/config/joint_limits.yaml"/>
+        <rosparam command="load" file="$(find tams_f329_with_left_motorhand_moveit_config)/config/cartesian_limits.yaml"/>
+
+        <node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher" />
+
+        <node name="robot_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" />
+
+        <include file="$(find tams_f329_with_left_motorhand_moveit_config)/launch/moveit_rviz.launch">
+            <arg name="rviz_config" value="$(find tams_f329_with_left_motorhand_moveit_config)/moveit.rviz"/>
+            <arg name="debug" value="false"/>
+        </include>
+    </group>
+
+
+
+
+</launch>

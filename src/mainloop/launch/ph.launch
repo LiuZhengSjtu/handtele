@@ -1,0 +1,18 @@
+<launch>
+
+    <arg name="ns_ph" default="phy_hand"/>
+    <arg name="ns_sr" default="shadow"/>
+
+    <group ns="$(arg ns_ph)">
+        <include  file="$(find physical_hand)/launch/demo.launch">
+        </include>
+    </group>
+
+    <group ns="$(arg ns_sr)">
+        <include  file="$(find tams_f329_with_left_motorhand_moveit_config)/launch/demo.launch">
+        </include>
+    </group>
+
+
+
+</launch>

@@ -61,7 +61,9 @@ class theTopic():
 
         self.tx.data = (self.cnt ) | ((self.cmd )<<32)
         self.pub.publish(self.tx)
-        rospy.loginfo("----1 %s topic tx cnt: %d ----",self.pkgname,self.cnt)
+
+        if self.cnt % 10 == 0:
+            rospy.loginfo("----1 %s topic tx cnt: %d ----",self.pkgname,self.cnt)
         self.cnt += 1
 
         self.rate.sleep()
