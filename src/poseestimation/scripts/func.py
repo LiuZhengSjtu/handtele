@@ -9,6 +9,7 @@ import numpy as np
 import cv2
 from scipy.spatial.transform import Rotation as R
 import time
+import copy
 import os
 
 LEFTHAND =True
@@ -54,10 +55,14 @@ class theTopic():
         self.theta_x = rospy.get_param('~theta_x')
         self.theta_y = rospy.get_param('~theta_y')
 
+        #   from camera frame to camera-center horizon frame
         self.Rot = R.from_euler("ZXY",[-self.theta_z, -self.theta_x, -self.theta_y],degrees = True)
-        # print(self.Rot.as_dcm())
-        # print('12121')
-        #   use self.Rot.apply([px,py,pz])
+
+        #   from camera-center horizon frame to camera-center world frame
+        self.Rot2world = R.from_euler("X", -90, degrees = True)
+        
+
+        
         
         self.tx_rate = rospy.get_param('~tx_rate')
         self.pub = pub
@@ -221,7 +226,7 @@ class poseEstimation():
             self.filehandle = open(self.savepath + timestr + '.txt','w')
 
             # self.filehandle.write('matrix: ' + '\n')
-            self.filehandle.write('---- save the key points results in ground frame and wrist frame || also save the unit vector of wrist frame ----'+'\n')
+            self.filehandle.write('---- save the key points results in ground frame and wrist frame || also save the unit vector of wrist frame ----'+'\n\n')
 
         #   the order re-map from the predictions to the physical model frame, wrist frame.
         # self.index_remap = np.array([])
@@ -329,6 +334,7 @@ class poseEstimation():
                     depth_img255 = ( ( topic.handarea128  +1 ) / 2 * 255).astype('uint8')
 
                     imgrgb = cv2.cvtColor(depth_img255, cv2.COLOR_BGR2RGB)
+                    imgrgb_ori = copy.deepcopy(imgrgb)
                     # for i in range(preds.shape[0]):
                     #     cv2.circle(imgrgb, center=(int(preds[i, 0]), int(preds[i, 1])), radius=2, color=(0, 255, 0), thickness=1)     #   green,  prediction
                     imgrgb = self.skeleton(imgrgb=imgrgb,preds=preds)
@@ -336,31 +342,33 @@ class poseEstimation():
                     cv2.waitKey(10)
 
                     if topic.saveflg:
-                        if topic.mainloop_cnt % 10 ==0:
+                        if topic.mainloop_cnt % 1 ==0:
                             cv2.imwrite(self.savepath + str(topic.mainloop_cnt).rjust(5,'0') + '.png',imgrgb)
+                            cv2.imwrite(self.savepath + 'ori_' +str(topic.mainloop_cnt).rjust(5,'0') + '.png',imgrgb_ori)
 
 
-                            self.filehandle.write(str(topic.mainloop_cnt).rjust(5,'0') + '\n')
+                            self.filehandle.write('mainloop_cnt:' + str(topic.mainloop_cnt).rjust(5,'0') + '.\n')
 
                             # self.filehandle.write('original preds: ' + '\n')
                             # self.filehandle.write(str(self.preds_original) + '\n')
 
-                            self.filehandle.write('annotation: ' + '\n')
-                            self.filehandle.write(str(topic.rx.annotation) + '\n')
+                            # self.filehandle.write('annotation: ' + '\n')
+                            # self.filehandle.write(str(topic.rx.annotation) + '\n')
 
-                            self.filehandle.write('self.tf_grd2rst: ' + '\n')
-                            self.filehandle.write(str(self.tf_grd2rst) + '\n')
+                            # self.filehandle.write('self.tf_grd2rst: ' + '\n')
+                            # self.filehandle.write(str(self.tf_grd2rst) + '\n')
 
-                            self.filehandle.write('self.preds_3d: ' + '\n')
-                            self.filehandle.write(str(self.preds_3d) + '\n')
+                            # self.filehandle.write('3D positions in camera frame. self.preds_3d: ' + '\n')
+                            # self.filehandle.write(str(self.preds_3d) + '\n')
 
-                            self.filehandle.write('ground preds: ' + '\n')
-                            self.filehandle.write(str(self.preds_ground) + '\n')
+                            self.filehandle.write('3D positions in camera-based world frame with unit m:' )
+                            self.filehandle.write(str(self.preds_world) + '\n\n')
 
-                            self.filehandle.write('wrist preds: ' + '\n')
-                            self.filehandle.write(str(self.preds_wrist) + '\n')
+                            #   in wrist frame, 20 3D positions.
+                            # self.filehandle.write('wrist preds: ' + '\n')
+                            # self.filehandle.write(str(self.preds_wrist) + '\n')
                             
-                            self.filehandle.write('*'*30 + '\n'*2)
+                            # self.filehandle.write('*'*30 + '\n'*2)
 
 
 
@@ -390,13 +398,19 @@ class poseEstimation():
         preds = preds0.cpu().detach().numpy()
         #   preds is the estimated result from reshaped image array. Further inverse reshape on X and Y axes is neccesary.
         self.preds_3d[:,2] = preds[:,2] * topic.rx.annotation[5] + topic.rx.annotation[2]
-        x_pix = ( (preds[:,0] - self.halfimg) / self.halfimg * topic.rx.annotation[4] ) #   in cropped hand image, not neccessary equal to reshaped 128*128
-        y_pix = ( (preds[:,1] - self.halfimg) / self.halfimg * topic.rx.annotation[3] ) #   origianl image pixel scale 
-        self.preds_3d[:,0] = (topic.rx.annotation[1] - 256 + ( (preds[:,0] - self.halfimg) / self.halfimg * topic.rx.annotation[4] )) / self.fw * self.preds_3d[:,2]      #topic.rx.annotation[2]
-        self.preds_3d[:,1] = (topic.rx.annotation[0] - 208 + ( (preds[:,1] - self.halfimg) / self.halfimg * topic.rx.annotation[3] )) / self.fh * self.preds_3d[:,2]      #topic.rx.annotation[2]
+        # x_pix = ( (preds[:,0] - self.halfimg) / self.halfimg * topic.rx.annotation[4] ) #   in cropped hand image, not neccessary equal to reshaped 128*128
+        # y_pix = ( (preds[:,1] - self.halfimg) / self.halfimg * topic.rx.annotation[3] ) #   origianl image pixel scale 
+        if False:
+            self.preds_3d[:,0] = (topic.rx.annotation[1] - 256 + ( (preds[:,0] - self.halfimg) / self.halfimg * topic.rx.annotation[4] )) / self.fw * self.preds_3d[:,2]      #topic.rx.annotation[2]
+            self.preds_3d[:,1] = (topic.rx.annotation[0] - 208 + ( (preds[:,1] - self.halfimg) / self.halfimg * topic.rx.annotation[3] )) / self.fh * self.preds_3d[:,2]      #topic.rx.annotation[2]
+        else:
+            self.preds_3d[:,0] = np.sin( (topic.rx.annotation[1] - 256 + ( (preds[:,0] - self.halfimg) / self.halfimg * topic.rx.annotation[4] )) / self.fw ) * self.preds_3d[:,2]      #topic.rx.annotation[2]
+            self.preds_3d[:,1] = np.sin( (topic.rx.annotation[0] - 208 + ( (preds[:,1] - self.halfimg) / self.halfimg * topic.rx.annotation[3] )) / self.fh )* self.preds_3d[:,2]      #topic.rx.annotation[2]      
 
-        #   from camera frame to camera-based horizon frame
+        #   from camera frame to camera-based horizon frame, unit: mm
         self.preds_ground = topic.Rot.apply(self.preds_3d)
+
+        self.preds_world = topic.Rot2world.apply(self.preds_ground) * 0.001
 
         #   center of four fingers (x,y,z) pix, pix, mm. x and y are in 128*128 image, so x and y are [0~128]
         self.handcenter = ( np.mean(preds[[1,5,9,13],0]) ,  np.mean(preds[[1,5,9,13],1])  ,  np.mean(self.preds_3d[[1,5,9,13],2]) )

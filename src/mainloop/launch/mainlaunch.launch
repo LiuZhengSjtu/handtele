@@ -2,7 +2,8 @@
     <arg name="path0"   default="/src/poseestimation/scripts/TriHornNet/ckpt" />
     <arg name="endcnt"  default = "100000" />
     <arg name="tx_rate" default = "10" />
-    <arg name="saveflg" default = "false" />
+    <arg name="saveflg" default = "true" />
+    <arg name="phy_model" default = "true" />
 
     <arg name="ns_ph" default="phy_hand"/>
     
@@ -23,6 +24,7 @@
     <node pkg="bio_ik_service_examples" type="physical_hand_bio_ik.py" name="get_bio_ik_hand_position" output="screen">
         <param name="endcnt"    type = "int"    value = "$(arg endcnt)"/>
         <param name="saveflg"   type = "bool"   value = "$(arg saveflg)"/>
+        <param name="phy_model"   type = "bool"   value = "$(arg phy_model)"/>
     </node>
 
     <!-- for kinect -->

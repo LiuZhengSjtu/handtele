@@ -158,7 +158,7 @@ class theTopic():
             cv2.imshow("image depth, hand detection received from kinect",depth_img255)
 
             if self.saveflg:
-                if self.rx_main_cnt % 10 == 0:
+                if self.rx_main_cnt % 1 == 0:
                     graypath = self.savepath + str(self.rx_main_cnt).rjust(5,'0') + '.png'
                     cv2.imwrite(graypath,depth_img255)
                     # np.savetxt("/homeL/zheng/ros_python/tempsave/" + str(self.cnt_rx_kinect).rjust(5,'0') + '.txt', depth_img255,fmt='%d')
@@ -264,7 +264,7 @@ class handDetection():
                 # delt_z = topic.distance
                 self.com[0] = self.com[0] + delt_y
                 self.com[1] = self.com[1] + delt_x
-                self.com[2] = topic.distance
+                self.com[2] += rate * (topic.distance - self.com[2])
 
             self.cube_img(cube_size=200)
 
